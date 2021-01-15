@@ -1,4 +1,4 @@
-Package sitescan is a basic web scraping tool that compares two file trees, and prints out the differences.
+sitescan is a basic web scraping tool that compares two file trees, and prints out the differences.
 
 sitescan can be configured in several different ways. At a minimum, it needs
 to be told the correct URLs to visit. It can also handle basic HTTP authentication
@@ -9,8 +9,8 @@ command line options, environment variables, and config files - or a combination
 all three. Precedence is as listed.
 
 
-Command Line Usage:
-
+##Command Line Usage:
+```
   -c, --config string      path to alternate configuration file
       --site1 string       Site 1 URL
       --site1name string   Site 1 Name
@@ -20,13 +20,13 @@ Command Line Usage:
       --site2name string   Site 2 Name
       --site2pass string   Site 2 Password
       --site2user string   Site 2 User ID
+```
 
-
-Environment Variables
+##Environment Variables
 
 Acceptable environment variables are all capitals, are prefixed with "SITESCAN_",
 and otherwise match the command line switches:
-
+```
 	SITESCAN_SITE1
 	SITESCAN_SITE1NAME
 	SITESCAN_SITE1PASS
@@ -35,9 +35,9 @@ and otherwise match the command line switches:
 	SITESCAN_SITE2NAME
 	SITESCAN_SITE2PASS
 	SITESCAN_SITE2USER
+```
 
-
-Config File
+##Config File
 
 The default configuration file is named "sitescan_config.yaml" and should reside
 in the directory you're running sitescan from (i.e. the directory that sitescan
