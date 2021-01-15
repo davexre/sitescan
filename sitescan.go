@@ -1,5 +1,5 @@
-// sitescan is a basic web scraping tool that compares two file trees, and
-// prints out the differences.
+// sitescan is a basic web scraping tool that compares two file trees,
+// and prints out the differences.
 //
 // sitescan can be configured in several different ways. At a minimum, it needs
 // to be told the correct URLs to visit. It can also handle basic HTTP authentication
@@ -12,7 +12,7 @@
 //
 // Command Line Usage:
 //
-// 	 -c, --config string      path to alternate configuration file
+//   -c, --config string      path to alternate configuration file
 //       --site1 string       Site 1 URL
 //       --site1name string   Site 1 Name
 //       --site1pass string   Site 1 Password
