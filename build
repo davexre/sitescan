@@ -1,0 +1,13 @@
+#!/bin/ksh
+
+export GOOS=darwin
+export GOARCH=amd64
+
+go build
+
+export GOOS=windows
+
+go build -o sitescan.exe
+
+unset GOOS
+unset GOARCH
