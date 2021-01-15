@@ -21,6 +21,7 @@
 //       --site2pass string   Site 2 Password
 //       --site2user string   Site 2 User ID
 //
+//
 // Environment Variables
 //
 // Acceptable environment variables are all capitals, are prefixed with "SITESCAN_",
@@ -34,6 +35,7 @@
 //	SITESCAN_SITE2NAME
 //	SITESCAN_SITE2PASS
 //	SITESCAN_SITE2USER
+//
 //
 // Config File
 //
