@@ -1,3 +1,4 @@
+# sitescan
 sitescan is a basic web scraping tool that compares two file trees, and prints out the differences.
 
 sitescan can be configured in several different ways. At a minimum, it needs
