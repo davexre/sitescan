@@ -10,6 +10,7 @@
 // all three. Precedence is as listed.
 //
 // Command Line Usage:
+//
 // 	 -c, --config string      path to alternate configuration file
 //       --site1 string       Site 1 URL
 //       --site1name string   Site 1 Name
@@ -21,6 +22,7 @@
 //       --site2user string   Site 2 User ID
 //
 // Environment Variables
+//
 // Acceptable environment variables are all capitals, are prefixed with "SITESCAN_",
 // and otherwise match the command line switches:
 //
@@ -34,6 +36,7 @@
 //	SITESCAN_SITE2USER
 //
 // Config File
+//
 // The default configuration file is named "sitescan_config.yaml" and should reside
 // in the directory you're running sitescan from (i.e. the directory that sitescan
 // will see as "PWD"). You can specify an alternate config file name/path using the
