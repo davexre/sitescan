@@ -1,8 +1,6 @@
-# .
+# sitescan
 
-[![GoDoc](https://img.shields.io/badge/pkg.go.dev-doc-blue)](http://pkg.go.dev/github.com/davexre/sitescan)
-
-Package sitescan is a basic web scraping tool that compares two file trees,
+sitescan is a basic web scraping tool that compares two file trees,
 and prints out the differences.
 
 sitescan can be configured in several different ways. At a minimum, it needs
@@ -15,7 +13,7 @@ all three. Precedence is as listed.
 
 Command Line Usage:
 
-```diff
+```
 -c, --config string      path to alternate configuration file
 -d, --debug              output debugging info
     --site1 string       Site 1 URL
@@ -33,7 +31,7 @@ Command Line Usage:
 Acceptable environment variables are all capitals, are prefixed with "SITESCAN_",
 and otherwise match the command line switches:
 
-```go
+```
 SITESCAN_SITE1
 SITESCAN_SITE1NAME
 SITESCAN_SITE1PASS
@@ -52,9 +50,9 @@ will see as "PWD"). You can specify an alternate config file name/path using the
 -c / --config command line option. And example config file:
 `	# Example sitescan_config.yaml file
 
-```go
-site1: [http://webserver.myhost.com/path/to/examine](http://webserver.myhost.com/path/to/examine)
-site2: [http://www.anotherhost.org:8080/](http://www.anotherhost.org:8080/)
+```
+site1: http://webserver.myhost.com/path/to/examine
+site2: http://www.anotherhost.org:8080/
 site1user: someguy
 site1pass: spaceballs12345
 site1name: MyHost.com site
@@ -62,6 +60,3 @@ site1name: MyHost.com site
 # site2pass:
 site2name: AnotherHost site `
 ```
-
----
-Readme created from Go doc with [goreadme](https://github.com/posener/goreadme)
