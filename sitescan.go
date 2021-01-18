@@ -9,10 +9,10 @@
 // command line options, environment variables, and config files - or a combination of
 // all three. Precedence is as listed.
 //
-//
 // Command Line Usage:
 //
 //   -c, --config string      path to alternate configuration file
+//   -d, --debug              output debugging info
 //       --site1 string       Site 1 URL
 //       --site1name string   Site 1 Name
 //       --site1pass string   Site 1 Password
@@ -21,7 +21,6 @@
 //       --site2name string   Site 2 Name
 //       --site2pass string   Site 2 Password
 //       --site2user string   Site 2 User ID
-//
 //
 // Environment Variables
 //
@@ -36,7 +35,6 @@
 //	SITESCAN_SITE2NAME
 //	SITESCAN_SITE2PASS
 //	SITESCAN_SITE2USER
-//
 //
 // Config File
 //
@@ -53,8 +51,6 @@
 // 	# site2user:
 // 	# site2pass:
 // 	site2name: AnotherHost site
-//
-
 package main
 
 import (
@@ -87,6 +83,8 @@ var url1, url2 string
 var site1User, site1Pass, site1Name string
 var site2User, site2Pass, site2Name string
 
+var debug = false
+
 // these are various anchor texts that are presented by the web browser that
 // change sort order, or take us up a directory, etc. We don't want to take
 // these into account in our Maps, so we use this list to ignore them when
@@ -113,6 +111,7 @@ func config() {
 
 	v := viper.New()
 	flag.StringVarP(&clConfigFile, "config", "c", "", "path to alternate configuration file")
+	flag.BoolVarP(&debug, "debug", "d", false, "output debugging info")
 	flag.StringVar(&flagSite1, "site1", "", "Site 1 URL")
 	flag.StringVar(&flagSite1User, "site1user", "", "Site 1 User ID")
 	flag.StringVar(&flagSite1Pass, "site1pass", "", "Site 1 Password")
@@ -156,7 +155,9 @@ func config() {
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			fmt.Printf("config file not found (viper)\n")
+			if debug {
+				fmt.Printf("config file not found (viper)\n")
+			}
 		} else {
 			fmt.Printf("%v\n", err)
 		}
@@ -170,6 +171,18 @@ func config() {
 	site2User = v.GetString("site2user")
 	site2Pass = v.GetString("site2pass")
 	site2Name = v.GetString("site2name")
+
+	if debug {
+		fmt.Printf("DEBUG: site1      <%s>\n", url1)
+		fmt.Printf("DEBUG: site1User  <%s>\n", site1User)
+		fmt.Printf("DEBUG: site1Pass  <%s>\n", site1Pass)
+		fmt.Printf("DEBUG: site1Name  <%s>\n", site1Name)
+		fmt.Printf("DEBUG: site2      <%s>\n", url2)
+		fmt.Printf("DEBUG: site2User  <%s>\n", site2User)
+		fmt.Printf("DEBUG: site2Pass  <%s>\n", site2Pass)
+		fmt.Printf("DEBUG: site2Name  <%s>\n", site2Name)
+		// fmt.Printf("DEBUG: nil values should be corrected to empty strings after this output\n")
+	}
 
 }
 
@@ -187,6 +200,11 @@ func config() {
 // hard to recognize directories - and also makes it hard to directly compare
 // between different servers. Thus, we check the href URL for a trailing slash,
 // and append one to the anchor tag text if it's not already there
+//
+// The primary work is done in the doc.Find block - it looks at each anchor
+// tag in the document, and processes it accordingly. We're expecting to find
+// a file listing there. Any directory needs to be explorer, so walkLink calls
+// itself recursively to handle that.
 func walkLink(urlprefix string, url string, currentName string, siteMap *map[string]string,
 	user string, pass string, counter *syncedData.Counter) {
 
@@ -203,32 +221,23 @@ func walkLink(urlprefix string, url string, currentName string, siteMap *map[str
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer res.Body.Close() // ensure this gets garbage collected at some point
+	defer res.Body.Close()
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// we expect to find a file listing at the target URL. We're going to skip over
-	// the headers, and process the file and directory links. If it's a directory, we
-	// need to dive into it and find anything else
 	doc.Find("a").Each(func(i int, s *goquery.Selection) {
 		_, exists := ignoreThese[s.Text()]
 		if !exists {
 			href, exists := s.Attr("href")
 			if exists {
 
-				// update the progress bar counter
 				counter.Incr()
 
 				ourname := fmt.Sprintf("%s%s", currentName, s.Text())
 				oururl := fmt.Sprintf("%s%s", url, href)
-
-				// note: maps are not concurrency safe... but we shouldn't be
-				// accessing our maps concurrently, so shouldn't be a problem?
-				// we can wrap the map in a Mutex, if we need to, but
-				// seems like overkill?
 
 				if strings.HasSuffix(href, "/") && !strings.HasSuffix(ourname, "/") {
 					ourname = fmt.Sprintf("%s/", ourname)
