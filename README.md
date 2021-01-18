@@ -2,7 +2,7 @@
 
 [![GoDoc](https://img.shields.io/badge/pkg.go.dev-doc-blue)](http://pkg.go.dev/github.com/davexre/sitescan)
 
-sitescan is a basic web scraping tool that compares two file trees,
+Package sitescan is a basic web scraping tool that compares two file trees,
 and prints out the differences.
 
 sitescan can be configured in several different ways. At a minimum, it needs
