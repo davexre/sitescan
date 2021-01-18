@@ -42,7 +42,7 @@
 // in the directory you're running sitescan from (i.e. the directory that sitescan
 // will see as "PWD"). You can specify an alternate config file name/path using the
 // -c / --config command line option. And example config file:
-// 	# Example sitescan_config.yaml file
+// `	# Example sitescan_config.yaml file
 // 	site1: http://webserver.myhost.com/path/to/examine
 // 	site2: http://www.anotherhost.org:8080/
 // 	site1user: someguy
@@ -50,7 +50,7 @@
 // 	site1name: MyHost.com site
 // 	# site2user:
 // 	# site2pass:
-// 	site2name: AnotherHost site
+// 	site2name: AnotherHost site `
 package main
 
 import (
