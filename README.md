@@ -53,8 +53,8 @@ will see as "PWD"). You can specify an alternate config file name/path using the
 # Example sitescan_config.yaml file
 
 ```go
-site1: `http://webserver.myhost.com/path/to/examine`
-site2: `http://www.anotherhost.org:8080/`
+site1: http://webserver.myhost.com/path/to/examie
+site2: http://www.anotherhost.org:8080/
 site1user: someguy
 site1pass: spaceballs12345
 site1name: MyHost.com site
