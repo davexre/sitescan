@@ -62,6 +62,7 @@ import (
 	"github.com/spf13/viper"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -163,14 +164,14 @@ func config() {
 		}
 	}
 
-	url1 = v.GetString("site1")
-	url2 = v.GetString("site2")
-	site1User = v.GetString("site1user")
-	site1Pass = v.GetString("site1pass")
-	site1Name = v.GetString("site1name")
-	site2User = v.GetString("site2user")
-	site2Pass = v.GetString("site2pass")
-	site2Name = v.GetString("site2name")
+	url1 = strings.Trim(v.GetString("site1"), "\"")
+	url2 = strings.Trim(v.GetString("site2"), "\"")
+	site1User = strings.Trim(v.GetString("site1user"), "\"")
+	site1Pass = strings.Trim(v.GetString("site1pass"), "\"")
+	site1Name = strings.Trim(v.GetString("site1name"), "\"")
+	site2User = strings.Trim(v.GetString("site2user"), "\"")
+	site2Pass = strings.Trim(v.GetString("site2pass"), "\"")
+	site2Name = strings.Trim(v.GetString("site2name"), "\"")
 
 	if debug {
 		fmt.Printf("DEBUG: site1      <%s>\n", url1)
@@ -181,7 +182,28 @@ func config() {
 		fmt.Printf("DEBUG: site2User  <%s>\n", site2User)
 		fmt.Printf("DEBUG: site2Pass  <%s>\n", site2Pass)
 		fmt.Printf("DEBUG: site2Name  <%s>\n", site2Name)
-		// fmt.Printf("DEBUG: nil values should be corrected to empty strings after this output\n")
+	}
+
+}
+
+// validateURL will double check a given string to ensure that it's actually a valid
+// URL and will highlight any problems with it.
+func validateURL(u string) bool {
+
+	url, err := url.Parse(u)
+	switch {
+	case err != nil:
+		fmt.Printf("ERROR: invalid URL: <%s>\n", u)
+		fmt.Printf("%v/n", err)
+		return false
+	case url.Scheme == "" || (url.Scheme != "http" && url.Scheme != "https"):
+		fmt.Printf("ERROR: URL must begin with http or https: <%s>", u)
+		return false
+	case url.Host == "":
+		fmt.Printf("ERROR: URL has no host specified: <%s>", u)
+		return false
+	default:
+		return true
 	}
 
 }
@@ -212,10 +234,22 @@ func walkLink(urlprefix string, url string, currentName string, siteMap *map[str
 
 	urltoget := fmt.Sprintf("%s%s", urlprefix, url)
 
-	req, _ := http.NewRequest("GET", urltoget, nil)
-	if user != "" || pass != "" {
+	req, err := http.NewRequest("GET", urltoget, nil)
+	switch {
+	case err != nil:
+		fmt.Println("ERROR retrieving HTTP Request for URL: ", urltoget)
+		log.Fatal(err)
+	case req == nil:
+		log.Fatal("ERROR retrieving HTTP Request - Request is empty. URL: %s", urltoget)
+	case user != "" || pass != "":
 		req.SetBasicAuth(user, pass)
 	}
+
+	/*
+		if user != "" || pass != "" {
+			req.SetBasicAuth(user, pass)
+		}
+	*/
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -359,6 +393,15 @@ func main() {
 		fmt.Printf("    Site 1: %s\n", url1)
 		fmt.Printf("    Site 2: %s\n\n", url2)
 		fmt.Printf("Nothing to compare...")
+		os.Exit(1)
+	}
+
+	if !validateURL(url1) {
+		fmt.Printf("\nURL1 is not a valid URL. Exiting....\n")
+		os.Exit(1)
+	}
+	if !validateURL(url2) {
+		fmt.Printf("\nURL2 is not a valid URL. Exiting....\n")
 		os.Exit(1)
 	}
 
