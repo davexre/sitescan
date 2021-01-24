@@ -194,13 +194,13 @@ func validateURL(u string) bool {
 	switch {
 	case err != nil:
 		fmt.Printf("ERROR: invalid URL: <%s>\n", u)
-		fmt.Printf("%v/n", err)
+		fmt.Printf("%v\n", err)
 		return false
 	case url.Scheme == "" || (url.Scheme != "http" && url.Scheme != "https"):
-		fmt.Printf("ERROR: URL must begin with http or https: <%s>", u)
+		fmt.Printf("ERROR: URL must begin with http or https: <%s>\n", u)
 		return false
 	case url.Host == "":
-		fmt.Printf("ERROR: URL has no host specified: <%s>", u)
+		fmt.Printf("ERROR: URL has no host specified: <%s>\n", u)
 		return false
 	default:
 		return true
@@ -240,7 +240,7 @@ func walkLink(urlprefix string, url string, currentName string, siteMap *map[str
 		fmt.Println("ERROR retrieving HTTP Request for URL: ", urltoget)
 		log.Fatal(err)
 	case req == nil:
-		log.Fatal("ERROR retrieving HTTP Request - Request is empty. URL: %s", urltoget)
+		log.Fatalf("ERROR retrieving HTTP Request - Request is empty. URL: %s", urltoget)
 	case user != "" || pass != "":
 		req.SetBasicAuth(user, pass)
 	}
