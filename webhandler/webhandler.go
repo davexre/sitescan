@@ -1,8 +1,10 @@
 package webhandler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 type HTTPClient interface {
@@ -17,7 +19,7 @@ func init() {
 	Client = &http.Client{}
 }
 
-// validateURL will double check a given string to ensure that it's actually a valid
+// ValidateURL will double check a given string to ensure that it's actually a valid
 // URL and will highlight any problems with it.
 func ValidateURL(u string) error {
 

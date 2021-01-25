@@ -2,9 +2,6 @@ package webhandler
 
 import (
 	"github.com/stretchr/testify/assert"
-	"io/ioutil"
-	"log"
-	"os"
 	"testing"
 )
 

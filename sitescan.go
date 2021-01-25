@@ -56,6 +56,7 @@ package main
 import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
+
 	"github.com/davexre/sitescan/webhandler"
 	"github.com/davexre/syncedData"
 	"github.com/gosuri/uilive"
