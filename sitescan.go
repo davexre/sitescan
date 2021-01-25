@@ -56,6 +56,7 @@ package main
 import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
+	"github.com/davexre/sitescan/webhandler"
 	"github.com/davexre/syncedData"
 	"github.com/gosuri/uilive"
 	flag "github.com/spf13/pflag"
@@ -70,38 +71,40 @@ import (
 	"time"
 )
 
-var site1Map = make(map[string]string)
-var site2Map = make(map[string]string)
+var (
+	site1Map = make(map[string]string)
+	site2Map = make(map[string]string)
 
-var updateInterval = time.Millisecond * 200
+	updateInterval = time.Millisecond * 200
 
-var site1done, site2done, stopupdating chan bool
-var site1Counter, site2Counter syncedData.Counter
+	site1done, site2done, stopupdating chan bool
+	site1Counter, site2Counter         syncedData.Counter
 
-var lw = uilive.New()
+	lw = uilive.New()
 
-var url1, url2 string
-var site1User, site1Pass, site1Name string
-var site2User, site2Pass, site2Name string
+	url1, url2                      string
+	site1User, site1Pass, site1Name string
+	site2User, site2Pass, site2Name string
 
-var debug = false
+	debug = false
 
-// these are various anchor texts that are presented by the web browser that
-// change sort order, or take us up a directory, etc. We don't want to take
-// these into account in our Maps, so we use this list to ignore them when
-// we build the maps.
-var ignoreThese = map[string]int{
-	"Name":             1,
-	"Last modified":    2,
-	"Size":             3,
-	"Description":      4,
-	"Parent Directory": 5,
-	"Type":             6,
-	"..":               7,
-	"../":              8,
-}
+	// these are various anchor texts that are presented by the web browser that
+	// change sort order, or take us up a directory, etc. We don't want to take
+	// these into account in our Maps, so we use this list to ignore them when
+	// we build the maps.
+	ignoreThese = map[string]int{
+		"Name":             1,
+		"Last modified":    2,
+		"Size":             3,
+		"Description":      4,
+		"Parent Directory": 5,
+		"Type":             6,
+		"..":               7,
+		"../":              8,
+	}
 
-var wg sync.WaitGroup
+	wg sync.WaitGroup
+)
 
 func config() {
 
@@ -186,28 +189,6 @@ func config() {
 
 }
 
-// validateURL will double check a given string to ensure that it's actually a valid
-// URL and will highlight any problems with it.
-func validateURL(u string) bool {
-
-	url, err := url.Parse(u)
-	switch {
-	case err != nil:
-		fmt.Printf("ERROR: invalid URL: <%s>\n", u)
-		fmt.Printf("%v\n", err)
-		return false
-	case url.Scheme == "" || (url.Scheme != "http" && url.Scheme != "https"):
-		fmt.Printf("ERROR: URL must begin with http or https: <%s>\n", u)
-		return false
-	case url.Host == "":
-		fmt.Printf("ERROR: URL has no host specified: <%s>\n", u)
-		return false
-	default:
-		return true
-	}
-
-}
-
 // walkLink builds a map of the URLs and plain text names for all the files
 // stored at the indicated site. This is intended to be called in a recursive
 // fashion between two different goroutines.
@@ -230,34 +211,20 @@ func validateURL(u string) bool {
 func walkLink(urlprefix string, url string, currentName string, siteMap *map[string]string,
 	user string, pass string, counter *syncedData.Counter) {
 
-	client := &http.Client{}
-
 	urltoget := fmt.Sprintf("%s%s", urlprefix, url)
 
-	req, err := http.NewRequest("GET", urltoget, nil)
+	response, err := HttpHandler(urltoget, user, pass)
 	switch {
 	case err != nil:
 		fmt.Println("ERROR retrieving HTTP Request for URL: ", urltoget)
 		log.Fatal(err)
-	case req == nil:
-		log.Fatalf("ERROR retrieving HTTP Request - Request is empty. URL: %s", urltoget)
-	case user != "" || pass != "":
-		req.SetBasicAuth(user, pass)
+	case response == nil:
+		log.Fatalf("ERROR retrieving HTTP Request - response is empty. URL: %s", urltoget)
 	}
 
-	/*
-		if user != "" || pass != "" {
-			req.SetBasicAuth(user, pass)
-		}
-	*/
+	defer response.Body.Close()
 
-	res, err := client.Do(req)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer res.Body.Close()
-
-	doc, err := goquery.NewDocumentFromReader(res.Body)
+	doc, err := goquery.NewDocumentFromReader(response.Body)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -396,12 +363,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	if !validateURL(url1) {
-		fmt.Printf("\nURL1 is not a valid URL. Exiting....\n")
+	err := ValidateURL(url1)
+	if err != nil {
+		fmt.Printf("ERROR: invalid URL: <%s>\n", url1)
+		fmt.Printf("%v\n", err)
 		os.Exit(1)
 	}
-	if !validateURL(url2) {
-		fmt.Printf("\nURL2 is not a valid URL. Exiting....\n")
+
+	err := ValidateURL(url2)
+	if err != nil {
+		fmt.Printf("ERROR: invalid URL: <%s>\n", url2)
+		fmt.Printf("%v\n", err)
 		os.Exit(1)
 	}
 
