@@ -56,15 +56,12 @@ package main
 import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
-
 	"github.com/davexre/sitescan/webhandler"
 	"github.com/davexre/syncedData"
 	"github.com/gosuri/uilive"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -214,7 +211,7 @@ func walkLink(urlprefix string, url string, currentName string, siteMap *map[str
 
 	urltoget := fmt.Sprintf("%s%s", urlprefix, url)
 
-	response, err := HttpHandler(urltoget, user, pass)
+	response, err := webhandler.HTTPHandler(urltoget, user, pass)
 	switch {
 	case err != nil:
 		fmt.Println("ERROR retrieving HTTP Request for URL: ", urltoget)
@@ -364,14 +361,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	err := ValidateURL(url1)
+	err := webhandler.ValidateURL(url1)
 	if err != nil {
 		fmt.Printf("ERROR: invalid URL: <%s>\n", url1)
 		fmt.Printf("%v\n", err)
 		os.Exit(1)
 	}
 
-	err := ValidateURL(url2)
+	err = webhandler.ValidateURL(url2)
 	if err != nil {
 		fmt.Printf("ERROR: invalid URL: <%s>\n", url2)
 		fmt.Printf("%v\n", err)

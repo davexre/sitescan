@@ -1,17 +1,20 @@
 package webhandler
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 )
 
+// HTTPClient interface will allow for substituting a mock HTTP client for testing purposes
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
 var (
+	// Client defines which HTTP interface will be used by HTTPHandler. By default, this is
+	// set to http.Client{} as part of the init function, but it can be changed to provide
+	// a mock HTTP response for testing purposes
 	Client HTTPClient
 )
 
@@ -30,18 +33,18 @@ func ValidateURL(u string) error {
 		fmt.Printf("%v\n", err)
 		return err
 	case url.Scheme == "" || (url.Scheme != "http" && url.Scheme != "https"):
-		fmt.Printf("ERROR: URL must begin with http or https: <%s>\n", u)
-		return errors.New(fmt.Sprintf("ERROR: URL must begin with http or https: <%s>\n", u))
+		return fmt.Errorf("ERROR: URL must begin with http or https: <%s>", u)
 	case url.Host == "":
-		fmt.Printf("ERROR: URL has no host specified: <%s>\n", u)
-		return errors.New(fmt.Sprintf("ERROR: URL has no host specified: <%s>\n", u))
+		return fmt.Errorf("ERROR: URL has no host specified: <%s>", u)
 	default:
 		return nil
 	}
 
 }
 
-func HttpHandler(url, user, pass string) (*http.Response, error) {
+// HTTPHandler retrieves a given URL, and can support basic HTTP authentication. Keeping this
+// code separated in a handler function allows for easier testing of several other pieces.
+func HTTPHandler(url, user, pass string) (*http.Response, error) {
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
