@@ -57,7 +57,7 @@ import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/davexre/sitescan/webhandler"
-	"github.com/davexre/syncedData"
+	"github.com/davexre/synceddata"
 	"github.com/gosuri/uilive"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -76,7 +76,7 @@ var (
 	updateInterval = time.Millisecond * 200
 
 	site1done, site2done, stopupdating chan bool
-	site1Counter, site2Counter         syncedData.Counter
+	site1Counter, site2Counter         synceddata.Counter
 
 	lw = uilive.New()
 
@@ -207,7 +207,7 @@ func config() {
 // a file listing there. Any directory needs to be explorer, so walkLink calls
 // itself recursively to handle that.
 func walkLink(urlprefix string, url string, currentName string, siteMap *map[string]string,
-	user string, pass string, counter *syncedData.Counter) {
+	user string, pass string, counter *synceddata.Counter) {
 
 	urltoget := fmt.Sprintf("%s%s", urlprefix, url)
 
@@ -257,7 +257,7 @@ func walkLink(urlprefix string, url string, currentName string, siteMap *map[str
 }
 
 func walkLinkWrapper(urlprefix string, currentName string, siteMap *map[string]string,
-	user, pass string, done chan bool, counter *syncedData.Counter) {
+	user, pass string, done chan bool, counter *synceddata.Counter) {
 
 	walkLink(urlprefix, "", "", siteMap, user, pass, counter)
 	done <- true

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/davexre/sitescan/mocks"
 	"github.com/davexre/sitescan/webhandler"
-	"github.com/davexre/syncedData"
+	"github.com/davexre/synceddata"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"log"
@@ -69,7 +69,7 @@ func TestWalkLink(t *testing.T) {
 	response := ""
 	url := "http://someurl.com/"
 	var testmap = make(map[string]string)
-	var counter syncedData.Counter
+	var counter synceddata.Counter
 
 	webhandler.Client = &mocks.MockClient{}
 	mocks.GetDoFunc = func(req *http.Request) (*http.Response, error) {
