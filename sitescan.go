@@ -86,7 +86,7 @@ var (
 
 	debug = false
 
-	// these are various anchor texts that are presented by the web browser that
+	// these are various anchor texts that are presented by the web server that
 	// change sort order, or take us up a directory, etc. We don't want to take
 	// these into account in our Maps, so we use this list to ignore them when
 	// we build the maps.
