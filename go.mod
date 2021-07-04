@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/PuerkitoBio/goquery v1.6.1
+	github.com/cavaliercoder/grab v2.0.0+incompatible
 	github.com/davexre/synceddata v0.1.0
 	github.com/gosuri/uilive v0.0.4
 	github.com/spf13/pflag v1.0.5

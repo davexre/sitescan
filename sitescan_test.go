@@ -3,17 +3,19 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/davexre/sitescan/mocks"
-	"github.com/davexre/sitescan/webhandler"
-	"github.com/davexre/synceddata"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"testing"
+
+	"github.com/davexre/sitescan/mocks"
+	"github.com/davexre/sitescan/webhandler"
+	"github.com/davexre/synceddata"
+	"github.com/stretchr/testify/assert"
 )
 
+// needs refactoring to match new structure of CompareMaps!!! This won't work, now.
 func TestCompareMaps(t *testing.T) {
 	// implement the map variables
 	sitename := "X"

@@ -1,4 +1,5 @@
 # Example sitescan_config.yaml file
+download: false
 site1: http://webserver.myhost.com/path/to/examine
 site2: http://www.anotherhost.org:8080/
 site1user: someguy

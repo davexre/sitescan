@@ -9,10 +9,16 @@
 // command line options, environment variables, and config files - or a combination of
 // all three. Precedence is as listed.
 //
+// Note that the download option requires that Site 1 be a valid location in a local
+// filesystem, not a remote URL.
+//
 // Command Line Usage:
 //
 //   -c, --config string      path to alternate configuration file
 //   -d, --debug              output debugging info
+//   -s, --suppress           suppress output of directories
+//       --download           automatically download files that exist on Site 2 that
+//                            are missing for Site 1
 //       --site1 string       Site 1 URL
 //       --site1name string   Site 1 Name
 //       --site1pass string   Site 1 Password
@@ -43,6 +49,8 @@
 // will see as "PWD"). You can specify an alternate config file name/path using the
 // -c / --config command line option. And example config file:
 // `	# Example sitescan_config.yaml file
+//  download: false
+//  suppress: true
 // 	site1: http://webserver.myhost.com/path/to/examine
 // 	site2: http://www.anotherhost.org:8080/
 // 	site1user: someguy
@@ -55,18 +63,22 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/PuerkitoBio/goquery"
+	"github.com/cavaliercoder/grab"
 	"github.com/davexre/sitescan/webhandler"
 	"github.com/davexre/synceddata"
 	"github.com/gosuri/uilive"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	"log"
-	"os"
-	"sort"
-	"strings"
-	"sync"
-	"time"
 )
 
 var (
@@ -84,7 +96,11 @@ var (
 	site1User, site1Pass, site1Name string
 	site2User, site2Pass, site2Name string
 
-	debug = false
+	debug    = false
+	download = false
+	suppress = false
+
+	throttle = 1
 
 	// these are various anchor texts that are presented by the web server that
 	// change sort order, or take us up a directory, etc. We don't want to take
@@ -114,6 +130,9 @@ func config() {
 	v := viper.New()
 	flag.StringVarP(&clConfigFile, "config", "c", "", "path to alternate configuration file")
 	flag.BoolVarP(&debug, "debug", "d", false, "output debugging info")
+	flag.BoolVarP(&suppress, "suppress", "s", false, "suppress output of directories")
+	flag.BoolVar(&download, "download", false, "automatically download files that exist on Site 2 that are missing for Site 1")
+	flag.IntVarP(&throttle, "throttle", "t", 1, "throttle concurrent downloads to this many")
 	flag.StringVar(&flagSite1, "site1", "", "Site 1 URL")
 	flag.StringVar(&flagSite1User, "site1user", "", "Site 1 User ID")
 	flag.StringVar(&flagSite1Pass, "site1pass", "", "Site 1 Password")
@@ -183,6 +202,9 @@ func config() {
 		fmt.Printf("DEBUG: site2User  <%s>\n", site2User)
 		fmt.Printf("DEBUG: site2Pass  <%s>\n", site2Pass)
 		fmt.Printf("DEBUG: site2Name  <%s>\n", site2Name)
+		fmt.Printf("DEBUG: download?  <%v>\n", download)
+		fmt.Printf("DEBUG: suppress?  <%v>\n", suppress)
+		fmt.Printf("DEBUG: throttle   <%d>\n", throttle)
 	}
 
 }
@@ -204,7 +226,7 @@ func config() {
 //
 // The primary work is done in the doc.Find block - it looks at each anchor
 // tag in the document, and processes it accordingly. We're expecting to find
-// a file listing there. Any directory needs to be explorer, so walkLink calls
+// a file listing there. Any directory needs to be explored, so walkLink calls
 // itself recursively to handle that.
 func walkLink(urlprefix string, url string, currentName string, siteMap *map[string]string,
 	user string, pass string, counter *synceddata.Counter) {
@@ -256,10 +278,66 @@ func walkLink(urlprefix string, url string, currentName string, siteMap *map[str
 
 }
 
-func walkLinkWrapper(urlprefix string, currentName string, siteMap *map[string]string,
+func walkFS(basepath string, siteMap *map[string]string, counter *synceddata.Counter) {
+
+	err := filepath.Walk(basepath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Println(err)
+			if os.IsPermission(err) {
+				return filepath.SkipDir
+			} else {
+				return err
+			}
+		}
+
+		if path == basepath {
+			if debug {
+				fmt.Printf("Skipping - seems to be our base path: %s\n", info.Name())
+			}
+			return nil
+		}
+
+		if info.IsDir() && strings.HasPrefix(info.Name(), ".") {
+			if debug {
+				fmt.Printf("Skipping dir %s\n", info.Name())
+			}
+			return filepath.SkipDir
+		}
+
+		if !info.IsDir() && strings.HasPrefix(info.Name(), ".") {
+			if debug {
+				fmt.Printf("Skipping file %s\n", info.Name())
+			}
+			return nil
+		}
+
+		counter.Incr()
+
+		filepath := strings.TrimPrefix(path, basepath+"/")
+
+		if info.IsDir() {
+			dirname := fmt.Sprintf("%s%s", filepath, "/")
+			(*siteMap)[dirname] = filepath
+		} else {
+			(*siteMap)[filepath] = filepath
+		}
+
+		return nil
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+}
+
+func walkWrapper(urlprefix string, siteMap *map[string]string,
 	user, pass string, done chan bool, counter *synceddata.Counter) {
 
-	walkLink(urlprefix, "", "", siteMap, user, pass, counter)
+	if strings.HasPrefix(urlprefix, "http") {
+		walkLink(urlprefix, "", "", siteMap, user, pass, counter)
+	} else {
+		walkFS(urlprefix, siteMap, counter)
+	}
 	done <- true
 	wg.Done()
 
@@ -321,15 +399,154 @@ func updateProgress() {
 	}
 }
 
-func compareMaps(sm1, sm2 *map[string]string, sitename string) {
+func downloadWorker(id int, localpath, remotepath string, fileschan <-chan string) {
 
-	banner := "Files/directories only at "
-	fmt.Printf("%s%s:\n", banner, sitename)
-	for i := 0; i < len(banner+sitename+":"); i++ {
-		fmt.Printf("=")
+	// grab the new job
+	// download the file
+	// wg.Done when finished
+
+	var dlSuffix = ".sitescandl"
+
+	for file := range fileschan {
+
+		fmt.Printf("thread %d starting %s\n", id, file)
+
+		if strings.HasSuffix(file, "/") {
+			fmt.Printf("thread %d skipping directory %s\n", id, file)
+			continue
+		}
+
+		if strings.HasPrefix(remotepath, "http") {
+
+			// may refactor this to use grab's DoBatch function later...
+
+			client := grab.NewClient()
+			req, _ := grab.NewRequest(localpath+file+dlSuffix, remotepath+file)
+			req.HTTPRequest.SetBasicAuth(site2User, site2Pass)
+			fmt.Printf("thread %d downloading: %s\n", id, file)
+
+			resp := client.Do(req)
+
+			if resp.Err() != nil {
+				fmt.Printf("thread %d error downloading: %s: %v\n", id, resp.Request.URL(), resp.Err())
+			} else {
+				fmt.Printf("thread %d finished: %s\n", id, file)
+			}
+
+		} else {
+
+			targetfile := localpath + file
+			targetdir := filepath.Dir(targetfile)
+
+			if targetdir == "." {
+				fmt.Printf("thread %d target dir yields no path: %s\n", id, targetdir)
+				break
+			}
+
+			if debug {
+				fmt.Printf("thread %d stat'ing %s\n", id, targetdir)
+			}
+
+			_, err := os.Stat(targetdir)
+			if os.IsNotExist(err) {
+				err := os.MkdirAll(targetdir, 0777)
+				if err != nil {
+					fmt.Printf("thread %d error making targetdir: %s\n", id, targetdir)
+					fmt.Printf("thread %d error: %s\n", id, err)
+					break
+				}
+			}
+
+			// Can we link it? (a trick, if the file lives in this filesystem)
+			err = os.Link(remotepath+file, targetfile) // we should be so lucky...
+			if err == nil {
+				if debug {
+					fmt.Printf("thread %d successfully linked %s\n", id, targetfile)
+				}
+			}
+			if err != nil {
+				// actually copy the file, then
+
+				source, err := os.Open(remotepath + file)
+				if err != nil {
+					fmt.Printf("thread %d error opening source: %s\n", id, url2+file)
+					fmt.Printf("thread %d error: %s", id, err)
+					break
+				}
+				defer source.Close()
+
+				target, err := os.Create(targetfile + dlSuffix)
+				if err != nil {
+					fmt.Printf("thread %d error creating target: %s\n", id, targetfile)
+					fmt.Printf("thread %d error: %s", id, err)
+					break
+				}
+				defer target.Close()
+
+				_, err = io.Copy(source, target)
+				if err != nil {
+					fmt.Printf("thread %d error copying file\n", id)
+					fmt.Printf("thread %d error: %s\n", id, err)
+					break
+				}
+
+			}
+
+		}
+
+		err := os.Rename(localpath+file+dlSuffix, localpath+file)
+		if err != nil {
+			fmt.Printf("thread %d error renaming %s\n", id, localpath+file+dlSuffix)
+		}
+
+		_ = os.Chmod(localpath+file, 0777)
+
 	}
-	fmt.Printf("\n\n")
 
+	wg.Done()
+}
+
+func downloadManager(localpath, remotepath string, filelist []string) {
+
+	if !strings.HasSuffix(localpath, "/") {
+		localpath = localpath + "/"
+	}
+	if !strings.HasSuffix(remotepath, "/") {
+		remotepath = remotepath + "/"
+	}
+
+	fileschan := make(chan string, len(filelist))
+
+	for _, file := range filelist {
+		if debug {
+			fmt.Printf("Adding to queue: %s\n", file)
+		}
+		fileschan <- file
+	}
+	close(fileschan)
+
+	for i := 1; i <= throttle; i++ {
+		if debug {
+			fmt.Printf("Adding thread %d to worker pool\n", i)
+		}
+		wg.Add(1)
+		go downloadWorker(i, localpath, remotepath, fileschan)
+	}
+
+	if debug {
+		fmt.Printf("downloadManaager: waiting\n")
+	}
+	wg.Wait()
+
+	if debug {
+		fmt.Printf("downloadManager: exiting\n")
+	}
+
+}
+
+func compareMaps(sm1, sm2 *map[string]string) []string {
+
+	var filelist []string
 	// alpha sort the keys
 
 	keys := make([]string, 0, len(*sm1))
@@ -341,11 +558,17 @@ func compareMaps(sm1, sm2 *map[string]string, sitename string) {
 	for _, k := range keys {
 		_, exists := (*sm2)[k]
 		if !exists {
-			fmt.Println(k)
+			if strings.HasSuffix(k, "/") {
+				if !suppress {
+					filelist = append(filelist, k)
+				}
+			} else {
+				filelist = append(filelist, k)
+			}
 		}
 	}
 
-	fmt.Printf("\n\n")
+	return filelist
 
 }
 
@@ -361,18 +584,40 @@ func main() {
 		os.Exit(1)
 	}
 
-	err := webhandler.ValidateURL(url1)
-	if err != nil {
-		fmt.Printf("ERROR: invalid URL: <%s>\n", url1)
-		fmt.Printf("%v\n", err)
-		os.Exit(1)
+	if strings.HasPrefix(url1, "http") {
+		if download {
+			fmt.Println("ERROR: site1 cannot be HTTP(S) based with --download")
+			os.Exit(1)
+		}
+		err := webhandler.ValidateURL(url1)
+		if err != nil {
+			fmt.Printf("ERROR: invalid URL: <%s>\n", url1)
+			fmt.Printf("%v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		_, err := os.Stat(url1)
+		if err != nil {
+			fmt.Printf("ERROR: path does not exist: <%s>\n", url1)
+			fmt.Printf("%v\n", err)
+			os.Exit(1)
+		}
 	}
 
-	err = webhandler.ValidateURL(url2)
-	if err != nil {
-		fmt.Printf("ERROR: invalid URL: <%s>\n", url2)
-		fmt.Printf("%v\n", err)
-		os.Exit(1)
+	if strings.HasPrefix(url2, "http") {
+		err := webhandler.ValidateURL(url2)
+		if err != nil {
+			fmt.Printf("ERROR: invalid URL: <%s>\n", url2)
+			fmt.Printf("%v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		_, err := os.Stat(url2)
+		if err != nil {
+			fmt.Printf("ERROR: path does not exist: <%s>\n", url2)
+			fmt.Printf("%v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	fmt.Println("")
@@ -388,10 +633,10 @@ func main() {
 	lw.Start()
 
 	wg.Add(1)
-	go walkLinkWrapper(url1, "", &site1Map, site1User, site1Pass, site1done, &site1Counter)
+	go walkWrapper(url1, &site1Map, site1User, site1Pass, site1done, &site1Counter)
 
 	wg.Add(1)
-	go walkLinkWrapper(url2, "", &site2Map, site2User, site2Pass, site2done, &site2Counter)
+	go walkWrapper(url2, &site2Map, site2User, site2Pass, site2done, &site2Counter)
 
 	go updateProgress()
 
@@ -406,7 +651,51 @@ func main() {
 
 	fmt.Printf("\n\n")
 
-	compareMaps(&site1Map, &site2Map, site1Name)
-	compareMaps(&site2Map, &site1Map, site2Name)
+	if download {
+
+		filelist := compareMaps(&site2Map, &site1Map)
+
+		banner := "Downloading from "
+		fmt.Printf("%s%s:\n", banner, site2Name)
+		for i := 0; i < len(banner+site2Name+":"); i++ {
+			fmt.Printf("=")
+		}
+		fmt.Printf("\n\n")
+
+		// url1 still serves as our base path to download to... and url2 is still the
+		// base on the other side. Note that we need to use site2Map to get the
+		// proper URL to pull from!
+
+		downloadManager(url1, url2, filelist)
+
+	} else {
+
+		banner := "Files/directories only at "
+
+		fmt.Printf("%s%s:\n", banner, site1Name)
+		for i := 0; i < len(banner+site1Name+":"); i++ {
+			fmt.Printf("=")
+		}
+		fmt.Printf("\n\n")
+
+		filelist := compareMaps(&site1Map, &site2Map)
+		for _, file := range filelist {
+			fmt.Println(file)
+		}
+		fmt.Printf("\n\n")
+
+		fmt.Printf("%s%s:\n", banner, site2Name)
+		for i := 0; i < len(banner+site2Name+":"); i++ {
+			fmt.Printf("=")
+		}
+		fmt.Printf("\n\n")
+
+		filelist = compareMaps(&site2Map, &site1Map)
+		for _, file := range filelist {
+			fmt.Println(file)
+		}
+		fmt.Printf("\n\n")
+
+	}
 
 }
