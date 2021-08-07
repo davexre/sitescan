@@ -12,6 +12,9 @@
 // Note that the download option requires that Site 1 be a valid location in a local
 // filesystem, not a remote URL.
 //
+// The timeout option will cause the program to exit after a specified period of time.
+// Not that the download mechanism will pick up where it left off.
+//
 // Command Line Usage:
 //
 //   -c, --config string      path to alternate configuration file
@@ -19,6 +22,8 @@
 //   -s, --suppress           suppress output of directories
 //       --download           automatically download files that exist on Site 2 that
 //                            are missing for Site 1
+//   -t, --throttle           Number of concurrent download threads
+//   -o, --timeout            number of hours to run downloads before exiting
 //       --site1 string       Site 1 URL
 //       --site1name string   Site 1 Name
 //       --site1pass string   Site 1 Password
@@ -101,8 +106,11 @@ var (
 	suppress = false
 
 	throttle = 1
+	timeout  = 0
 
-	// these are various anchor texts that are presented by the web server that
+	dlSuffix = ".sitescandl"
+
+	// these are various anchor texts that are presented by the web browser that
 	// change sort order, or take us up a directory, etc. We don't want to take
 	// these into account in our Maps, so we use this list to ignore them when
 	// we build the maps.
@@ -133,6 +141,7 @@ func config() {
 	flag.BoolVarP(&suppress, "suppress", "s", false, "suppress output of directories")
 	flag.BoolVar(&download, "download", false, "automatically download files that exist on Site 2 that are missing for Site 1")
 	flag.IntVarP(&throttle, "throttle", "t", 1, "throttle concurrent downloads to this many")
+	flag.IntVarP(&timeout, "timeout", "o", 0, "timeout - number of hours to run downloads before exiting")
 	flag.StringVar(&flagSite1, "site1", "", "Site 1 URL")
 	flag.StringVar(&flagSite1User, "site1user", "", "Site 1 User ID")
 	flag.StringVar(&flagSite1Pass, "site1pass", "", "Site 1 Password")
@@ -282,8 +291,10 @@ func walkFS(basepath string, siteMap *map[string]string, counter *synceddata.Cou
 
 	err := filepath.Walk(basepath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			fmt.Println(err)
 			if os.IsPermission(err) {
+				if debug {
+					fmt.Println(err)
+				}
 				return filepath.SkipDir
 			} else {
 				return err
@@ -405,16 +416,23 @@ func downloadWorker(id int, localpath, remotepath string, fileschan <-chan strin
 	// download the file
 	// wg.Done when finished
 
-	var dlSuffix = ".sitescandl"
-
 	for file := range fileschan {
 
-		fmt.Printf("thread %d starting %s\n", id, file)
-
 		if strings.HasSuffix(file, "/") {
-			fmt.Printf("thread %d skipping directory %s\n", id, file)
+			if debug {
+				fmt.Printf("Worker %d skipping directory %s\n", id, file)
+			}
 			continue
 		}
+
+		if strings.HasSuffix(file, dlSuffix) {
+			if debug {
+				fmt.Printf("Worker %d skipping download file %s\n", id, file)
+			}
+			continue
+		}
+
+		fmt.Printf("Worker %d starting %s\n", id, file)
 
 		if strings.HasPrefix(remotepath, "http") {
 
@@ -423,14 +441,14 @@ func downloadWorker(id int, localpath, remotepath string, fileschan <-chan strin
 			client := grab.NewClient()
 			req, _ := grab.NewRequest(localpath+file+dlSuffix, remotepath+file)
 			req.HTTPRequest.SetBasicAuth(site2User, site2Pass)
-			fmt.Printf("thread %d downloading: %s\n", id, file)
+			fmt.Printf("Worker %d downloading: %s\n", id, file)
 
 			resp := client.Do(req)
 
 			if resp.Err() != nil {
-				fmt.Printf("thread %d error downloading: %s: %v\n", id, resp.Request.URL(), resp.Err())
+				fmt.Printf("Worker %d error downloading: %s: %v\n", id, resp.Request.URL(), resp.Err())
 			} else {
-				fmt.Printf("thread %d finished: %s\n", id, file)
+				fmt.Printf("Worker %d finished: %s\n", id, file)
 			}
 
 		} else {
@@ -439,20 +457,25 @@ func downloadWorker(id int, localpath, remotepath string, fileschan <-chan strin
 			targetdir := filepath.Dir(targetfile)
 
 			if targetdir == "." {
-				fmt.Printf("thread %d target dir yields no path: %s\n", id, targetdir)
+				fmt.Printf("Worker %d target dir yields no path: %s\n", id, targetdir)
 				break
 			}
 
 			if debug {
-				fmt.Printf("thread %d stat'ing %s\n", id, targetdir)
+				fmt.Printf("Worker %d stat'ing %s\n", id, targetdir)
 			}
+
+			// since we're a local filesystem copy, and not HTTP, we can't trust
+			// a filecopy to pick up where we left off. So, remove the dlSuffix
+			// file, if it exists. If it doesn't, no biggie - we can ignore the error
+			_ = os.Remove(file + dlSuffix)
 
 			_, err := os.Stat(targetdir)
 			if os.IsNotExist(err) {
 				err := os.MkdirAll(targetdir, 0777)
 				if err != nil {
-					fmt.Printf("thread %d error making targetdir: %s\n", id, targetdir)
-					fmt.Printf("thread %d error: %s\n", id, err)
+					fmt.Printf("Worker %d error making targetdir: %s\n", id, targetdir)
+					fmt.Printf("Worker %d error: %s\n", id, err)
 					break
 				}
 			}
@@ -461,7 +484,7 @@ func downloadWorker(id int, localpath, remotepath string, fileschan <-chan strin
 			err = os.Link(remotepath+file, targetfile) // we should be so lucky...
 			if err == nil {
 				if debug {
-					fmt.Printf("thread %d successfully linked %s\n", id, targetfile)
+					fmt.Printf("Worker %d successfully linked %s\n", id, targetfile)
 				}
 			}
 			if err != nil {
@@ -469,24 +492,24 @@ func downloadWorker(id int, localpath, remotepath string, fileschan <-chan strin
 
 				source, err := os.Open(remotepath + file)
 				if err != nil {
-					fmt.Printf("thread %d error opening source: %s\n", id, url2+file)
-					fmt.Printf("thread %d error: %s", id, err)
+					fmt.Printf("tWorker %d error opening source: %s\n", id, url2+file)
+					fmt.Printf("Worker %d error: %s", id, err)
 					break
 				}
 				defer source.Close()
 
 				target, err := os.Create(targetfile + dlSuffix)
 				if err != nil {
-					fmt.Printf("thread %d error creating target: %s\n", id, targetfile)
-					fmt.Printf("thread %d error: %s", id, err)
+					fmt.Printf("Worker %d error creating target: %s\n", id, targetfile)
+					fmt.Printf("Worker %d error: %s", id, err)
 					break
 				}
 				defer target.Close()
 
 				_, err = io.Copy(source, target)
 				if err != nil {
-					fmt.Printf("thread %d error copying file\n", id)
-					fmt.Printf("thread %d error: %s\n", id, err)
+					fmt.Printf("Worker %d error copying file\n", id)
+					fmt.Printf("Worker %d error: %s\n", id, err)
 					break
 				}
 
@@ -496,7 +519,7 @@ func downloadWorker(id int, localpath, remotepath string, fileschan <-chan strin
 
 		err := os.Rename(localpath+file+dlSuffix, localpath+file)
 		if err != nil {
-			fmt.Printf("thread %d error renaming %s\n", id, localpath+file+dlSuffix)
+			fmt.Printf("Worker %d error renaming %s\n", id, localpath+file+dlSuffix)
 		}
 
 		_ = os.Chmod(localpath+file, 0777)
@@ -504,6 +527,27 @@ func downloadWorker(id int, localpath, remotepath string, fileschan <-chan strin
 	}
 
 	wg.Done()
+}
+
+func timeoutWorker(timechan <-chan bool) {
+
+	if debug {
+		fmt.Printf("timeoutWorker: starting\n")
+	}
+
+	select {
+	case _, ok := <-timechan:
+		if !ok {
+			if debug {
+				fmt.Printf("timeoutWorker: timeout channel closed, exiting\n")
+			}
+			return
+		}
+	case <-time.After(time.Duration(timeout) * time.Hour):
+		fmt.Printf("Exiting at timeout interval of %d hours\n", timeout)
+		os.Exit(0)
+	}
+
 }
 
 func downloadManager(localpath, remotepath string, filelist []string) {
@@ -516,10 +560,11 @@ func downloadManager(localpath, remotepath string, filelist []string) {
 	}
 
 	fileschan := make(chan string, len(filelist))
+	timechan := make(chan bool)
 
 	for _, file := range filelist {
 		if debug {
-			fmt.Printf("Adding to queue: %s\n", file)
+			fmt.Printf("downloadManager: Adding to queue: %s\n", file)
 		}
 		fileschan <- file
 	}
@@ -527,16 +572,30 @@ func downloadManager(localpath, remotepath string, filelist []string) {
 
 	for i := 1; i <= throttle; i++ {
 		if debug {
-			fmt.Printf("Adding thread %d to worker pool\n", i)
+			fmt.Printf("downloadManager: Adding thread %d to worker pool\n", i)
 		}
 		wg.Add(1)
 		go downloadWorker(i, localpath, remotepath, fileschan)
+	}
+
+	if timeout > 0 {
+		if debug {
+			fmt.Printf("downloadManager: Starting timeout timer\n")
+		}
+		go timeoutWorker(timechan)
 	}
 
 	if debug {
 		fmt.Printf("downloadManaager: waiting\n")
 	}
 	wg.Wait()
+
+	if timeout > 0 {
+		if debug {
+			fmt.Printf("downloadManager: signalling timeoutWorker to exit\n")
+		}
+		close(timechan)
+	}
 
 	if debug {
 		fmt.Printf("downloadManager: exiting\n")
