@@ -22,6 +22,9 @@
 //   -s, --suppress           suppress output of directories
 //       --download           automatically download files that exist on Site 2 that
 //                            are missing for Site 1
+//       --dryrun             requires --download, runs process without actually
+//                            performing any downloads
+//   -n, --noprogress         don't show the progress bar (for unattended use)
 //   -t, --throttle           Number of concurrent download threads
 //   -o, --timeout            number of hours to run downloads before exiting
 //       --site1 string       Site 1 URL
@@ -80,6 +83,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/cavaliercoder/grab"
 	"github.com/davexre/sitescan/webhandler"
+	"github.com/davexre/sitescan/writable"
 	"github.com/davexre/synceddata"
 	"github.com/gosuri/uilive"
 	flag "github.com/spf13/pflag"
@@ -101,9 +105,11 @@ var (
 	site1User, site1Pass, site1Name string
 	site2User, site2Pass, site2Name string
 
-	debug    = false
-	download = false
-	suppress = false
+	debug      = false
+	download   = false
+	dryrun     = false
+	noprogress = false
+	suppress   = false
 
 	throttle = 1
 	timeout  = 0
@@ -138,8 +144,10 @@ func config() {
 	v := viper.New()
 	flag.StringVarP(&clConfigFile, "config", "c", "", "path to alternate configuration file")
 	flag.BoolVarP(&debug, "debug", "d", false, "output debugging info")
-	flag.BoolVarP(&suppress, "suppress", "s", false, "suppress output of directories")
 	flag.BoolVar(&download, "download", false, "automatically download files that exist on Site 2 that are missing for Site 1")
+	flag.BoolVar(&dryrun, "dryrun", false, "requires --download, runs process without actually performing any downloads")
+	flag.BoolVarP(&noprogress, "noprogress", "n", false, "don't show the progress bar (for unattended use)")
+	flag.BoolVarP(&suppress, "suppress", "s", false, "suppress output of directories")
 	flag.IntVarP(&throttle, "throttle", "t", 1, "throttle concurrent downloads to this many")
 	flag.IntVarP(&timeout, "timeout", "o", 0, "timeout - number of hours to run downloads before exiting")
 	flag.StringVar(&flagSite1, "site1", "", "Site 1 URL")
@@ -203,17 +211,24 @@ func config() {
 	site2Name = strings.Trim(v.GetString("site2name"), "\"")
 
 	if debug {
-		fmt.Printf("DEBUG: site1      <%s>\n", url1)
-		fmt.Printf("DEBUG: site1User  <%s>\n", site1User)
-		fmt.Printf("DEBUG: site1Pass  <%s>\n", site1Pass)
-		fmt.Printf("DEBUG: site1Name  <%s>\n", site1Name)
-		fmt.Printf("DEBUG: site2      <%s>\n", url2)
-		fmt.Printf("DEBUG: site2User  <%s>\n", site2User)
-		fmt.Printf("DEBUG: site2Pass  <%s>\n", site2Pass)
-		fmt.Printf("DEBUG: site2Name  <%s>\n", site2Name)
-		fmt.Printf("DEBUG: download?  <%v>\n", download)
-		fmt.Printf("DEBUG: suppress?  <%v>\n", suppress)
-		fmt.Printf("DEBUG: throttle   <%d>\n", throttle)
+		fmt.Printf("DEBUG: site1       <%s>\n", url1)
+		fmt.Printf("DEBUG: site1User   <%s>\n", site1User)
+		fmt.Printf("DEBUG: site1Pass   <%s>\n", site1Pass)
+		fmt.Printf("DEBUG: site1Name   <%s>\n", site1Name)
+		fmt.Printf("DEBUG: site2       <%s>\n", url2)
+		fmt.Printf("DEBUG: site2User   <%s>\n", site2User)
+		fmt.Printf("DEBUG: site2Pass   <%s>\n", site2Pass)
+		fmt.Printf("DEBUG: site2Name   <%s>\n", site2Name)
+		fmt.Printf("DEBUG: download?   <%v>\n", download)
+		fmt.Printf("DEBUG: dryrun?     <%v>\n", dryrun)
+		fmt.Printf("DEBUG: noprogress? <%v>\n", noprogress)
+		fmt.Printf("DEBUG: suppress?   <%v>\n", suppress)
+		fmt.Printf("DEBUG: throttle    <%d>\n", throttle)
+		fmt.Printf("DEBUG: timeout     <%d>\n", timeout)
+	}
+
+	if dryrun && !download {
+		fmt.Printf("--dryrun option requires --download to be effective\n")
 	}
 
 }
@@ -349,7 +364,11 @@ func walkWrapper(urlprefix string, siteMap *map[string]string,
 	} else {
 		walkFS(urlprefix, siteMap, counter)
 	}
-	done <- true
+
+	if !noprogress {
+		done <- true
+	}
+
 	wg.Done()
 
 }
@@ -412,10 +431,6 @@ func updateProgress() {
 
 func downloadWorker(id int, localpath, remotepath string, fileschan <-chan string) {
 
-	// grab the new job
-	// download the file
-	// wg.Done when finished
-
 	for file := range fileschan {
 
 		if strings.HasSuffix(file, "/") {
@@ -434,95 +449,104 @@ func downloadWorker(id int, localpath, remotepath string, fileschan <-chan strin
 
 		fmt.Printf("Worker %d starting %s\n", id, file)
 
-		if strings.HasPrefix(remotepath, "http") {
+		if !dryrun {
 
-			// may refactor this to use grab's DoBatch function later...
+			if strings.HasPrefix(remotepath, "http") {
 
-			client := grab.NewClient()
-			req, _ := grab.NewRequest(localpath+file+dlSuffix, remotepath+file)
-			req.HTTPRequest.SetBasicAuth(site2User, site2Pass)
-			fmt.Printf("Worker %d downloading: %s\n", id, file)
+				// may refactor this to use grab's DoBatch function later...
 
-			resp := client.Do(req)
+				client := grab.NewClient()
+				req, _ := grab.NewRequest(localpath+file+dlSuffix, remotepath+file)
+				req.HTTPRequest.SetBasicAuth(site2User, site2Pass)
+				fmt.Printf("Worker %d downloading: %s\n", id, file)
 
-			if resp.Err() != nil {
-				fmt.Printf("Worker %d error downloading: %s: %v\n", id, resp.Request.URL(), resp.Err())
+				resp := client.Do(req)
+
+				if resp.Err() != nil {
+					fmt.Printf("Worker %d error downloading: %s: %v\n", id, resp.Request.URL(), resp.Err())
+					break
+				} else {
+					fmt.Printf("Worker %d finished: %s\n", id, file)
+				}
+
 			} else {
-				fmt.Printf("Worker %d finished: %s\n", id, file)
-			}
 
-		} else {
+				targetfile := localpath + file
+				targetdir := filepath.Dir(targetfile)
 
-			targetfile := localpath + file
-			targetdir := filepath.Dir(targetfile)
-
-			if targetdir == "." {
-				fmt.Printf("Worker %d target dir yields no path: %s\n", id, targetdir)
-				break
-			}
-
-			if debug {
-				fmt.Printf("Worker %d stat'ing %s\n", id, targetdir)
-			}
-
-			// since we're a local filesystem copy, and not HTTP, we can't trust
-			// a filecopy to pick up where we left off. So, remove the dlSuffix
-			// file, if it exists. If it doesn't, no biggie - we can ignore the error
-			_ = os.Remove(file + dlSuffix)
-
-			_, err := os.Stat(targetdir)
-			if os.IsNotExist(err) {
-				err := os.MkdirAll(targetdir, 0777)
-				if err != nil {
-					fmt.Printf("Worker %d error making targetdir: %s\n", id, targetdir)
-					fmt.Printf("Worker %d error: %s\n", id, err)
+				if targetdir == "." {
+					fmt.Printf("Worker %d target dir yields no path: %s\n", id, targetdir)
 					break
 				}
-			}
 
-			// Can we link it? (a trick, if the file lives in this filesystem)
-			err = os.Link(remotepath+file, targetfile) // we should be so lucky...
-			if err == nil {
+				// since we're a local filesystem copy, and not HTTP, we can't trust
+				// a filecopy to pick up where we left off. So, remove the dlSuffix
+				// file, if it exists. If it doesn't, no biggie - we can ignore the error
 				if debug {
-					fmt.Printf("Worker %d successfully linked %s\n", id, targetfile)
+					fmt.Printf("Worker %d removing dl file, if it exists\n", id)
 				}
+
+				_ = os.Remove(file + dlSuffix)
+
+				if debug {
+					fmt.Printf("Worker %d stat'ing %s\n", id, targetdir)
+				}
+
+				_, err := os.Stat(targetdir)
+				if os.IsNotExist(err) {
+					err := os.MkdirAll(targetdir, 0777)
+					if err != nil {
+						fmt.Printf("Worker %d error making targetdir: %s\n", id, targetdir)
+						fmt.Printf("Worker %d error: %s\n", id, err)
+						break
+					}
+				}
+
+				// Can we link it? (a trick, if the file lives in this filesystem)
+				err = os.Link(remotepath+file, targetfile) // we should be so lucky...
+				if err == nil {
+					if debug {
+						fmt.Printf("Worker %d successfully linked %s\n", id, targetfile)
+					}
+				}
+				if err != nil {
+					// actually copy the file, then
+
+					source, err := os.Open(remotepath + file)
+					if err != nil {
+						fmt.Printf("tWorker %d error opening source: %s\n", id, url2+file)
+						fmt.Printf("Worker %d error: %s", id, err)
+						break
+					}
+					defer source.Close()
+
+					target, err := os.Create(targetfile + dlSuffix)
+					if err != nil {
+						fmt.Printf("Worker %d error creating target: %s\n", id, targetfile)
+						fmt.Printf("Worker %d error: %s", id, err)
+						break
+					}
+					defer target.Close()
+
+					_, err = io.Copy(source, target)
+					if err != nil {
+						fmt.Printf("Worker %d error copying file\n", id)
+						fmt.Printf("Worker %d error: %s\n", id, err)
+						break
+					}
+
+				}
+
 			}
+
+			err := os.Rename(localpath+file+dlSuffix, localpath+file)
 			if err != nil {
-				// actually copy the file, then
-
-				source, err := os.Open(remotepath + file)
-				if err != nil {
-					fmt.Printf("tWorker %d error opening source: %s\n", id, url2+file)
-					fmt.Printf("Worker %d error: %s", id, err)
-					break
-				}
-				defer source.Close()
-
-				target, err := os.Create(targetfile + dlSuffix)
-				if err != nil {
-					fmt.Printf("Worker %d error creating target: %s\n", id, targetfile)
-					fmt.Printf("Worker %d error: %s", id, err)
-					break
-				}
-				defer target.Close()
-
-				_, err = io.Copy(source, target)
-				if err != nil {
-					fmt.Printf("Worker %d error copying file\n", id)
-					fmt.Printf("Worker %d error: %s\n", id, err)
-					break
-				}
-
+				fmt.Printf("Worker %d error renaming %s\n", id, localpath+file+dlSuffix)
 			}
 
-		}
+			_ = os.Chmod(localpath+file, 0777)
 
-		err := os.Rename(localpath+file+dlSuffix, localpath+file)
-		if err != nil {
-			fmt.Printf("Worker %d error renaming %s\n", id, localpath+file+dlSuffix)
 		}
-
-		_ = os.Chmod(localpath+file, 0777)
 
 	}
 
@@ -551,6 +575,15 @@ func timeoutWorker(timechan <-chan bool) {
 }
 
 func downloadManager(localpath, remotepath string, filelist []string) {
+
+	writable, err := writable.IsWritable(localpath, debug)
+	if err != nil {
+		fmt.Printf("Error checking if %s is writable\n", localpath)
+		log.Fatal(err)
+	} else if !writable {
+		fmt.Printf("ERROR: %s is not writable. Cannot download files.\n", localpath)
+		os.Exit(1)
+	}
 
 	if !strings.HasSuffix(localpath, "/") {
 		localpath = localpath + "/"
@@ -687,9 +720,6 @@ func main() {
 
 	site1done = make(chan bool)
 	site2done = make(chan bool)
-	stopupdating = make(chan bool)
-
-	lw.Start()
 
 	wg.Add(1)
 	go walkWrapper(url1, &site1Map, site1User, site1Pass, site1done, &site1Counter)
@@ -697,18 +727,24 @@ func main() {
 	wg.Add(1)
 	go walkWrapper(url2, &site2Map, site2User, site2Pass, site2done, &site2Counter)
 
-	go updateProgress()
+	if !noprogress {
+		lw.Start()
+		stopupdating = make(chan bool)
+		go updateProgress()
+	}
 
 	wg.Wait()
 
-	stopupdating <- true
+	if !noprogress {
+		stopupdating <- true
 
-	// this pause helps prevent a case where the updateProgress thread doesn't get
-	// finished before we start writing to the screen, so the output looks odd. Rather
-	// than add a second waitqueue, this seemed like a more reasonable approach.
-	time.Sleep(time.Second)
+		// this pause helps prevent a case where the updateProgress thread doesn't get
+		// finished before we start writing to the screen, so the output looks odd. Rather
+		// than add a second waitqueue, this seemed like a more reasonable approach.
+		time.Sleep(time.Second)
 
-	fmt.Printf("\n\n")
+		fmt.Printf("\n\n")
+	}
 
 	if download {
 
