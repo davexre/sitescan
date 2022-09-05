@@ -160,6 +160,11 @@ func config() {
 	flag.StringVar(&flagSite2Name, "site2name", "", "Site 2 Name")
 	flag.Parse()
 
+	if debug {
+		fmt.Printf("DEBUG: clConfigFile <%s>\n", clConfigFile)
+	}
+
+
 	if clConfigFile != "" {
 		if strings.HasSuffix(clConfigFile, ".yaml") {
 			clConfigFileFSName = clConfigFile
@@ -172,7 +177,8 @@ func config() {
 			fmt.Println("config file not found: ", clConfigFileFSName)
 			v.SetConfigName("sitescan_config")
 		} else {
-			v.SetConfigName(clConfigFile)
+			v.SetConfigName(filepath.Base(clConfigFile))
+			v.AddConfigPath(filepath.Dir(clConfigFile))
 		}
 	} else {
 		v.SetConfigName("sitescan_config")
