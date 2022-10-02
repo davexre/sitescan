@@ -17,26 +17,26 @@
 //
 // Command Line Usage:
 //
-//   -c, --config string      path to alternate configuration file
-//   -d, --debug              output debugging info
-//   -s, --suppress           suppress output of directories
-//       --download           automatically download files that exist on Site 2 that
-//                            are missing for Site 1
-//       --dryrun             requires --download, runs process without actually
-//                            performing any downloads
-//   -n, --noprogress         don't show the progress bar (for unattended use)
-//   -t, --throttle           Number of concurrent download threads
-//   -o, --timeout            number of hours to run downloads before exiting
-//       --site1 string       Site 1 URL
-//       --site1name string   Site 1 Name
-//       --site1pass string   Site 1 Password
-//       --site1user string   Site 1 User ID
-//       --site2 string       Site 2 URL
-//       --site2name string   Site 2 Name
-//       --site2pass string   Site 2 Password
-//       --site2user string   Site 2 User ID
+//	-c, --config string      path to alternate configuration file
+//	-d, --debug              output debugging info
+//	-s, --suppress           suppress output of directories
+//	    --download           automatically download files that exist on Site 2 that
+//	                         are missing for Site 1
+//	    --dryrun             requires --download, runs process without actually
+//	                         performing any downloads
+//	-n, --noprogress         don't show the progress bar (for unattended use)
+//	-t, --throttle           Number of concurrent download threads
+//	-o, --timeout            number of hours to run downloads before exiting
+//	    --site1 string       Site 1 URL
+//	    --site1name string   Site 1 Name
+//	    --site1pass string   Site 1 Password
+//	    --site1user string   Site 1 User ID
+//	    --site2 string       Site 2 URL
+//	    --site2name string   Site 2 Name
+//	    --site2pass string   Site 2 Password
+//	    --site2user string   Site 2 User ID
 //
-// Environment Variables
+// # Environment Variables
 //
 // Acceptable environment variables are all capitals, are prefixed with "SITESCAN_",
 // and otherwise match the command line switches:
@@ -50,27 +50,29 @@
 //	SITESCAN_SITE2PASS
 //	SITESCAN_SITE2USER
 //
-// Config File
+// # Config File
 //
 // The default configuration file is named "sitescan_config.yaml" and should reside
 // in the directory you're running sitescan from (i.e. the directory that sitescan
 // will see as "PWD"). You can specify an alternate config file name/path using the
 // -c / --config command line option. And example config file:
 // `	# Example sitescan_config.yaml file
-//  download: false
-//  suppress: true
-// 	site1: http://webserver.myhost.com/path/to/examine
-// 	site2: http://www.anotherhost.org:8080/
-// 	site1user: someguy
-// 	site1pass: spaceballs12345
-// 	site1name: MyHost.com site
-// 	# site2user:
-// 	# site2pass:
-// 	site2name: AnotherHost site `
+//
+//	 download: false
+//	 suppress: true
+//		site1: http://webserver.myhost.com/path/to/examine
+//		site2: http://www.anotherhost.org:8080/
+//		site1user: someguy
+//		site1pass: spaceballs12345
+//		site1name: MyHost.com site
+//		# site2user:
+//		# site2pass:
+//		site2name: AnotherHost site `
 package main
 
 import (
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"os"
@@ -121,14 +123,18 @@ var (
 	// these into account in our Maps, so we use this list to ignore them when
 	// we build the maps.
 	ignoreThese = map[string]int{
-		"Name":             1,
-		"Last modified":    2,
-		"Size":             3,
-		"Description":      4,
-		"Parent Directory": 5,
-		"Type":             6,
-		"..":               7,
-		"../":              8,
+		"Name":                                   1,
+		"Last modified":                          2,
+		"Size":                                   3,
+		"Description":                            4,
+		"Parent Directory":                       5,
+		"Type":                                   6,
+		"..":                                     7,
+		"../":                                    8,
+		"File Name":                              9,
+		"File Size":                              10,
+		"Date":                                   11,
+		html.UnescapeString("&nbsp;&darr;&nbsp"): 12,
 	}
 
 	wg sync.WaitGroup
@@ -163,7 +169,6 @@ func config() {
 	if debug {
 		fmt.Printf("DEBUG: clConfigFile <%s>\n", clConfigFile)
 	}
-
 
 	if clConfigFile != "" {
 		if strings.HasSuffix(clConfigFile, ".yaml") {
